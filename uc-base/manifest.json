@@ -1,0 +1,113 @@
+{
+  "source": "XGrid_Orange_v29.0.0_UC_TEST1.apk",
+  "bytes": 173699562,
+  "sha256": "380f2fba501e7f1d70a4f5ca2d72f509eea815f240137cc5aa18021e9f7731e7",
+  "certificateSha256": "b0e8b0cf257ba5ad833e54096c6d4beaf56ef17637af10f6d57227c76f5bfed4",
+  "parts": [
+    {
+      "path": "part-000.apkchunk",
+      "bytes": 8388576,
+      "sha256": "230cbbf4cdd8dc579aef50e18e284e8d9e84cfd03a0aa2c49614fc5bca862687"
+    },
+    {
+      "path": "part-001.apkchunk",
+      "bytes": 8388576,
+      "sha256": "a61f36244f2b88e73cc180f0eaf5a00c8d674288f9d0da231baa26503e65deeb"
+    },
+    {
+      "path": "part-002.apkchunk",
+      "bytes": 8388576,
+      "sha256": "c34fe2b9a8a1b5622403cd00e77e0f71d82fe30805113dc24c78fa0733337548"
+    },
+    {
+      "path": "part-003.apkchunk",
+      "bytes": 8388576,
+      "sha256": "fefb4859a4b55b11fe163f87b9d3035dee95a930d8d96d52e73cc20c02fa8ee6"
+    },
+    {
+      "path": "part-004.apkchunk",
+      "bytes": 8388576,
+      "sha256": "a8afe2db004cc45d6c0d296e565a27f98abd9d083de4a791dbf36848174dba7d"
+    },
+    {
+      "path": "part-005.apkchunk",
+      "bytes": 8388576,
+      "sha256": "3018e3400a09948ef02de8808dd207092616a4f14d1d5f381dafba24b01db9aa"
+    },
+    {
+      "path": "part-006.apkchunk",
+      "bytes": 8388576,
+      "sha256": "9b5900d5fcb2371cf546f6e43fe699e751b795eb04cbccf44d564c93652a1727"
+    },
+    {
+      "path": "part-007.apkchunk",
+      "bytes": 8388576,
+      "sha256": "d60dafd4e34b0472e9c6841a9e2af9b91fc1eee7198449ed940c11b3a20e8376"
+    },
+    {
+      "path": "part-008.apkchunk",
+      "bytes": 8388576,
+      "sha256": "0049cf34d113fd0a5808c2f974fc42fdaee65ced7caf749d5c329a80883cd9e3"
+    },
+    {
+      "path": "part-009.apkchunk",
+      "bytes": 8388576,
+      "sha256": "5fab74d1776d042b93d9de9a9e29392c404ad1a6f55eda1ab65e17bef169318f"
+    },
+    {
+      "path": "part-010.apkchunk",
+      "bytes": 8388576,
+      "sha256": "ac7560c33eaafd0a066772f01c61d0e751d6780246cd6c41db5db74bdaca53c9"
+    },
+    {
+      "path": "part-011.apkchunk",
+      "bytes": 8388576,
+      "sha256": "061cd0fd055738d92d87fa921a4ac22a4457a7b1cc41ec30afa73d170e713934"
+    },
+    {
+      "path": "part-012.apkchunk",
+      "bytes": 8388576,
+      "sha256": "a2c4edfb69bca43db5e012ca24c3d3d12241f6843384ee7762e593c4d6d4e8c4"
+    },
+    {
+      "path": "part-013.apkchunk",
+      "bytes": 8388576,
+      "sha256": "0251af4230c28bdae605bd66d9c9b85395aa1457c5bd444f6748ff8ece77f116"
+    },
+    {
+      "path": "part-014.apkchunk",
+      "bytes": 8388576,
+      "sha256": "caf6feac0a0b424b60ff63891d45e00335df313786e765c59212bbe257c99950"
+    },
+    {
+      "path": "part-015.apkchunk",
+      "bytes": 8388576,
+      "sha256": "f3e644239251729d5bad95ca89ff9d14339fe90892d27105d59a883901fc0202"
+    },
+    {
+      "path": "part-016.apkchunk",
+      "bytes": 8388576,
+      "sha256": "d8a57148a3ac19b31ee169fe847a80f78099cd09cb3a0e31f9760d5475a8fda4"
+    },
+    {
+      "path": "part-017.apkchunk",
+      "bytes": 8388576,
+      "sha256": "040349abead6b6109926a0af252efb9817e60711f7c0ee326f5af6749a60e0c1"
+    },
+    {
+      "path": "part-018.apkchunk",
+      "bytes": 8388576,
+      "sha256": "a62fc59c32a5ff3c28a36634d9d8422b90924868b5e5f12eb9fdf527c57c2d77"
+    },
+    {
+      "path": "part-019.apkchunk",
+      "bytes": 8388576,
+      "sha256": "8152fdacba2b9a8d9adc5995bd1859aab6d7db8cdaac86db0d2145728ad10695"
+    },
+    {
+      "path": "part-020.apkchunk",
+      "bytes": 5928042,
+      "sha256": "371a982588bce9e4d8184394118797d4d14805b6b1ff70ed02015585ce1ad4ab"
+    }
+  ]
+}

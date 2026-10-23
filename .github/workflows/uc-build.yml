@@ -13,15 +13,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
+      - name: Ensure Android 35 SDK tools
+        run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0"'
       - name: Verify pinned pose model
         run: python3 scripts/ensure_model.py
       - name: Check Yellow controller syntax
-        run: node --check assets/yellow.js
+        run: node tests/yellow_contracts.cjs
       - name: Compile native UC bridge and visual engine
         run: |
           chmod +x gradlew
@@ -35,3 +37,25 @@ jobs:
             native/build/outputs/mapping/release/mapping.txt
           if-no-files-found: error
           retention-days: 7
+      - name: Install DEX assembler
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y libsmali-java
+      - name: Restore verified original UC foundation
+        run: python3 scripts/restore_base.py
+      - name: Package Yellow inside UC
+        run: |
+          python3 scripts/package_uc.py --base build/uc-original.apk --engine native/build/outputs/apk/release/native-release-unsigned.apk --output dist/Yellow-UC-unaligned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -P 16 -f 4 dist/Yellow-UC-unaligned.apk dist/Yellow-UC-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 dist/Yellow-UC-unsigned.apk
+          python3 scripts/verify_package.py --base build/uc-original.apk --apk dist/Yellow-UC-unsigned.apk
+      - name: Upload UC package for original-key signing
+        uses: actions/upload-artifact@v4
+        with:
+          name: Yellow-UC-unsigned-and-audit
+          path: |
+            dist/Yellow-UC-unsigned.apk
+            dist/Yellow-UC-unaligned.audit.json
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 10
