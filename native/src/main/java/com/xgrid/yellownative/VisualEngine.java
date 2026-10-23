@@ -132,8 +132,13 @@ public final class VisualEngine implements AutoCloseable {
 
     public VisualEngine(Context context) {
         boolean cv=false;
-        try { cv=OpenCVLoader.initDebug(); }
-        catch(Throwable t) { initError="OpenCV: "+t.getClass().getSimpleName(); }
+        try {
+            if (!OpenCVLoader.initDebug()) throw new IllegalStateException("OpenCV native loader returned false");
+            checkOpenCvNative();
+            cv=true;
+        } catch(Throwable t) {
+            initError="OpenCV: "+t.getClass().getSimpleName()+": "+t.getMessage();
+        }
         openCvReady=cv;
         PoseLandmarker p=null;
         try {
@@ -145,8 +150,44 @@ public final class VisualEngine implements AutoCloseable {
                     .setMinPosePresenceConfidence(.5f)
                     .build();
             p=PoseLandmarker.createFromOptions(context, config);
-        } catch(Throwable t){ initError+=" Pose: "+t.getClass().getSimpleName()+": "+t.getMessage(); }
+            checkPoseNative(p);
+        } catch(Throwable t){
+            if(p!=null)try{p.close();}catch(Throwable ignored){}
+            p=null;
+            initError+=" Pose: "+t.getClass().getSimpleName()+": "+t.getMessage();
+        }
         pose=p; poseReady=p!=null;
+    }
+
+    /**
+     * Loading a .so or creating a task is not proof its JNI inference path works.
+     * These tiny native smoke tests run on the bridge's background executor, never
+     * during the UC splash and never on the main/UI thread.
+     */
+    private static void checkOpenCvNative() {
+        Mat first=null,second=null,flow=null;
+        try {
+            first=Mat.zeros(64,64,CvType.CV_8UC1);
+            second=Mat.zeros(64,64,CvType.CV_8UC1);
+            flow=new Mat();
+            Video.calcOpticalFlowFarneback(first,second,flow,.5,2,12,2,5,1.1,0);
+            double[] sample=flow.get(32,32);
+            if(flow.empty() || sample==null || sample.length!=2
+                    || !Double.isFinite(sample[0]) || !Double.isFinite(sample[1]))
+                throw new IllegalStateException("OpenCV optical-flow self-test failed");
+        } finally {
+            if(first!=null)first.release();
+            if(second!=null)second.release();
+            if(flow!=null)flow.release();
+        }
+    }
+    private static void checkPoseNative(PoseLandmarker detector) {
+        Bitmap probe=Bitmap.createBitmap(SIZE,SIZE,Bitmap.Config.ARGB_8888);
+        try {
+            probe.eraseColor(Color.BLACK);
+            if(detector.detect(new BitmapImageBuilder(probe).build())==null)
+                throw new IllegalStateException("MediaPipe returned no inference result");
+        } finally { probe.recycle(); }
     }
 
     public static boolean isGif(byte[] bytes) {
@@ -160,15 +201,16 @@ public final class VisualEngine implements AutoCloseable {
         Signature sig=new Signature();
         if(bitmap==null)return sig;
         Bitmap frame=Bitmap.createScaledBitmap(bitmap,SIZE,SIZE,true);
-        sig.geometry=geometry(frame);
-        addSubjects(sig,frame);
-        addPoses(sig,frame);
-        sig.frames=1;
-        sig.uniqueFrames=1;
-        sig.gifVerified=false;
-        sig.motionValid=false;
-        if(frame!=bitmap)frame.recycle();
-        return sig;
+        try {
+            sig.geometry=geometry(frame);
+            addSubjects(sig,frame);
+            addPoses(sig,frame);
+            sig.frames=1;
+            sig.uniqueFrames=1;
+            sig.gifVerified=false;
+            sig.motionValid=false;
+            return sig;
+        } finally { if(frame!=bitmap)frame.recycle(); }
     }
 
     public Signature analyze(byte[] data, Bitmap fallback) {
@@ -198,6 +240,7 @@ public final class VisualEngine implements AutoCloseable {
             frames.add(Bitmap.createScaledBitmap(fallback,SIZE,SIZE,true));
         }
         if(frames.isEmpty()) return s;
+        try {
         s.frames=frames.size();
         long prev=-1;
         for(Bitmap b:frames){
@@ -228,8 +271,8 @@ public final class VisualEngine implements AutoCloseable {
             s.motion[0] = total/Math.max(1,n);
             s.motionValid=total > .02;  // genuine measurable motion after correction
         }
-        for(Bitmap b:frames) b.recycle();
         return s;
+        } finally { for(Bitmap b:frames) b.recycle(); }
     }
 
 
@@ -245,7 +288,7 @@ public final class VisualEngine implements AutoCloseable {
                 double[] v=normalizedPose(human);
                 if(v!=null && sig.normalizedPoses.size()<12)sig.normalizedPoses.add(v);
             }
-        }catch(Throwable ignored){}
+        }catch(Throwable error){throw new IllegalStateException("MediaPipe inference failed",error);}
     }
     private static double[] normalizedPose(List<NormalizedLandmark> pose){
         int[] joints={11,12,23,24,25,26,27,28};
@@ -328,13 +371,7 @@ public final class VisualEngine implements AutoCloseable {
     }
 
     private double[] motionStats(Bitmap a,Bitmap b) {
-        if(!openCvReady) {
-            int[] p=new int[SIZE*SIZE],q=new int[SIZE*SIZE];
-            a.getPixels(p,0,SIZE,0,0,SIZE,SIZE); b.getPixels(q,0,SIZE,0,0,SIZE,SIZE);
-            double diff=0;
-            for(int i=0;i<p.length;i+=4) diff+=Math.abs(gray(p[i])-gray(q[i]));
-            return new double[]{diff/(p.length/4),0,0,0};
-        }
+        if(!openCvReady)throw new IllegalStateException("OpenCV is required for GIF motion");
         Mat first=new Mat(),second=new Mat(),ga=new Mat(),gb=new Mat(),flow=new Mat(),
             smallA=new Mat(),smallB=new Mat();
         try {
@@ -368,7 +405,7 @@ public final class VisualEngine implements AutoCloseable {
             double vector=Math.hypot(dirX,dirY);
             double dx=vector>.01?dirX/vector:0,dy=vector>.01?dirY/vector:0;
             return new double[]{speed,dx,dy,Math.min(1,active/n)};
-        } catch(Throwable ignored){return new double[]{0,0,0,0};}
+        } catch(Throwable error){throw new IllegalStateException("OpenCV optical flow failed",error);}
         finally {first.release();second.release();ga.release();gb.release();flow.release();smallA.release();smallB.release();}
     }
 
