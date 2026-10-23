@@ -51,3 +51,24 @@ assert.equal([...timers.values()][0].at,1100,'Page mutations must not postpone a
 assert(!source.includes('window.mbrowser')&&!source.includes('window._XJSAPI_'));
 for(const label of ['GIF ONLY','FIND MORE','FIND VARIATIONS','RE-SEARCH','__xgridUcOpenImageMenu'])assert(source.includes(label));
 console.log('PASS: controller syntax, v3 native signatures, geometry-only ranking, 70/30 ranking, capability argument, request deduplication, stale callback rejection, accepted native callback, non-starving GIF scheduler, UC-only controller controls.');
+
+const base = require('path').join(__dirname,'../native/src/main/java');
+const engine = fs.readFileSync(require('path').join(base,'com/xgrid/yellownative/VisualEngine.java'),'utf8');
+const bridge = fs.readFileSync(require('path').join(base,'com/xgrid/yellowuc/UCVisualBridge.java'),'utf8');
+assert(engine.includes('checkOpenCvNative();') && engine.includes('checkPoseNative(p);'),
+  'Both native engines must pass real self-tests, not just load their libraries');
+assert(engine.includes('Video.calcOpticalFlowFarneback(') && engine.includes('detector.detect('));
+assert(!engine.includes('if(!openCvReady) {'), 'No mock pixel-difference motion fallback');
+assert(engine.includes('throw new IllegalStateException("OpenCV optical flow failed",error)'));
+assert(engine.includes('throw new IllegalStateException("MediaPipe inference failed",error)'));
+assert(bridge.includes('!candidate.poseReady || !candidate.openCvReady'),
+  'A partial native engine may never be shared');
+assert(bridge.includes('!current.poseReady||!current.openCvReady'),
+  'Both engines are mandatory at every analyze request');
+assert(bridge.includes('ensureEngineAsync()') && bridge.includes('INIT_RETRY_MS=5000'),
+  'Failed native initialization must be retried asynchronously');
+assert(source.includes("xsNativeLastOutcome='waiting-for-required-native'"));
+assert(source.includes("xsNativeLastOutcome='required-native-unavailable'"));
+assert(source.includes("xsToast('MediaPipe / OpenCV unavailable"),
+  'Native unavailability must be visible to the user');
+console.log('PASS: mandatory MediaPipe/OpenCV initialization, native JNI smoke tests, retry and explicit UI failure.');
