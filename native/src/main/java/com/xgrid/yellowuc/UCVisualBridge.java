@@ -17,6 +17,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Real on-device MediaPipe/OpenCV worker and authenticated page-response bridge.
@@ -35,6 +36,11 @@ public final class UCVisualBridge implements AutoCloseable {
         void evaluateMainFrame(String script);
     }
     private final TrustedPageHost host;
+    private final Context application;
+    private final AtomicBoolean initQueued=new AtomicBoolean();
+    private static final long INIT_RETRY_MS=5000;
+    private static volatile long lastEngineFailure;
+    private static final AtomicInteger initAttempts=new AtomicInteger();
     private final ThreadPoolExecutor jobs=new ThreadPoolExecutor(1,2,20,TimeUnit.SECONDS,new ArrayBlockingQueue<>(4),r->{Thread t=new Thread(r,"yellow-vision");t.setDaemon(true);return t;},new ThreadPoolExecutor.AbortPolicy());
     private final Handler ui=new Handler(Looper.getMainLooper());
     private final AtomicInteger requests=new AtomicInteger(),success=new AtomicInteger(),failure=new AtomicInteger(),cancelled=new AtomicInteger(),timeout=new AtomicInteger(),rejected=new AtomicInteger(),cacheHits=new AtomicInteger();
@@ -50,8 +56,52 @@ public final class UCVisualBridge implements AutoCloseable {
 
     public UCVisualBridge(Context ctx,TrustedPageHost page){
         host=page;
+        application=ctx.getApplicationContext();
         jobs.allowCoreThreadTimeOut(true);
-        try{jobs.execute(()->{try{synchronized(ENGINE_LOCK){if(sharedEngine==null)sharedEngine=new VisualEngine(ctx.getApplicationContext());}if(!closed)engine=sharedEngine;}catch(Throwable t){initError="engine:"+t.getClass().getSimpleName();}});}catch(RuntimeException e){initError=e.getClass().getSimpleName();}
+        ensureEngineAsync();
+    }
+
+    /**
+     * Both native engines are mandatory. A partial initialization is never
+     * reused or reported as available. Failed initialization retries at a
+     * bounded interval when a trusted page requests status or analysis.
+     * Do not initialize on UC's application/splash thread.
+     */
+    private void ensureEngineAsync(){
+        if(closed || (engine!=null && engine.poseReady && engine.openCvReady))return;
+        long failedAt=lastEngineFailure;
+        if(failedAt>0 && SystemClock.elapsedRealtime()-failedAt<INIT_RETRY_MS)return;
+        if(!initQueued.compareAndSet(false,true))return;
+        try{
+            jobs.execute(()->{
+                try{
+                    synchronized(ENGINE_LOCK){
+                        if(sharedEngine!=null && (!sharedEngine.poseReady || !sharedEngine.openCvReady)){
+                            try{sharedEngine.close();}catch(Throwable ignored){}
+                            sharedEngine=null;
+                        }
+                        if(sharedEngine==null){
+                            initAttempts.incrementAndGet();
+                            VisualEngine candidate=new VisualEngine(application);
+                            if(!candidate.poseReady || !candidate.openCvReady){
+                                initError="required-native-unavailable:"+candidate.initError;
+                                try{candidate.close();}catch(Throwable ignored){}
+                                lastEngineFailure=SystemClock.elapsedRealtime();
+                                return;
+                            }
+                            sharedEngine=candidate;
+                        }
+                        if(!closed){engine=sharedEngine;initError="";lastEngineFailure=0;}
+                    }
+                }catch(Throwable t){
+                    initError="native-init:"+t.getClass().getSimpleName()+": "+t.getMessage();
+                    lastEngineFailure=SystemClock.elapsedRealtime();
+                }finally{initQueued.set(false);}
+            });
+        }catch(RejectedExecutionException e){
+            initQueued.set(false);
+            initError="native-init-queue-full";
+        }
     }
     public static boolean googleSearch(String s){
         try{URI u=new URI(s);String h=u.getHost(),p=u.getPath();
@@ -76,6 +126,7 @@ public final class UCVisualBridge implements AutoCloseable {
     }
     /** Called on an actual UC main-frame document-ready callback (after attach). */
     public void trustedDocumentReady(){
+        ensureEngineAsync();
         ui.post(()->{
             if(closed||!attached||!googleSearch(host.activeTopLevelUrl())||activePage.isEmpty())return;
             String current=host.activeTopLevelUrl();
@@ -86,8 +137,13 @@ public final class UCVisualBridge implements AutoCloseable {
     @JavascriptInterface public String status(){
         JSONObject j=new JSONObject();
         try{
+            ensureEngineAsync();
             VisualEngine e=engine;
-            j.put("ready",e!=null&&e.poseReady&&e.openCvReady&&attached&&!closed&&!paused&&!activePage.isEmpty());
+            boolean bothReady=e!=null&&e.poseReady&&e.openCvReady;
+            j.put("ready",bothReady&&attached&&!closed&&!paused&&!activePage.isEmpty());
+            j.put("nativeRequired",true);
+            j.put("nativeState",bothReady?"ready":(initQueued.get()?"initializing":"retry-pending"));
+            j.put("initAttempts",initAttempts.get());
             j.put("pose",e!=null&&e.poseReady);j.put("openCv",e!=null&&e.openCvReady);
             j.put("nativeAttached",attached?1:0);
             j.put("inflight",jobs.getActiveCount());j.put("queued",jobs.getQueue().size());j.put("cacheHits",cacheHits.get());
@@ -99,7 +155,9 @@ public final class UCVisualBridge implements AutoCloseable {
     }
     /** Requires both per-request token and independently injected session capability. */
     @JavascriptInterface public boolean analyzeVisual(String original,String preview,String token,String capability){
-        if(closed||paused||!attached||engine==null||token==null||token.length()<2||token.length()>96||capability==null||!capability.equals(session)||activePage.isEmpty()){rejected.incrementAndGet();return false;}
+        VisualEngine current=engine;
+        if(current==null||!current.poseReady||!current.openCvReady)ensureEngineAsync();
+        if(closed||paused||!attached||current==null||!current.poseReady||!current.openCvReady||token==null||token.length()<2||token.length()>96||capability==null||!capability.equals(session)||activePage.isEmpty()){rejected.incrementAndGet();return false;}
         String gif=StrictHttpsMedia.permitted(original)?original:"";
         String still=StrictHttpsMedia.permitted(preview)?preview:"";
         if(gif.isEmpty()&&still.isEmpty()){rejected.incrementAndGet();return false;}
