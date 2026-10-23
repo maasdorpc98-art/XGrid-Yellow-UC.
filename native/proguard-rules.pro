@@ -1,0 +1,6 @@
+-repackageclasses org.xgrid.yellow.internal
+-keep class com.xgrid.yellowuc.** { *; }
+-keepclasseswithmembers class * { native <methods>; }
+-keepclassmembers class * { @android.webkit.JavascriptInterface <methods>; }
+-keepattributes *Annotation*,Signature,InnerClasses,EnclosingMethod
+-dontwarn javax.annotation.**

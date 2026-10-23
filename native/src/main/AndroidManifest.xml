@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Compile container only. This manifest is never installed or merged into UC. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application android:hasCode="true" />
+</manifest>
