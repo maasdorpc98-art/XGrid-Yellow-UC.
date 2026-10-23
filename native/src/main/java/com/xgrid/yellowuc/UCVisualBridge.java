@@ -40,15 +40,18 @@ public final class UCVisualBridge implements AutoCloseable {
     private final AtomicInteger requests=new AtomicInteger(),success=new AtomicInteger(),failure=new AtomicInteger(),cancelled=new AtomicInteger(),timeout=new AtomicInteger(),rejected=new AtomicInteger(),cacheHits=new AtomicInteger();
     private final SecureRandom rng=new SecureRandom();
     private final Map<String,VisualEngine.Signature> cache=new LinkedHashMap<String,VisualEngine.Signature>(96,.75f,true){@Override protected boolean removeEldestEntry(Map.Entry<String,VisualEngine.Signature> e){return size()>160;}};
+    private static final Object ENGINE_LOCK=new Object();
+    private static volatile VisualEngine sharedEngine;
     private volatile VisualEngine engine;
     private volatile int generation;
     private volatile String initError="",activePage="",session="";
-    private volatile boolean attached,closed;
+    private volatile boolean attached,closed,paused;
     private volatile long analysisMs;
 
     public UCVisualBridge(Context ctx,TrustedPageHost page){
         host=page;
-        try{jobs.execute(()->{try{VisualEngine candidate=new VisualEngine(ctx.getApplicationContext());if(closed){candidate.close();}else{engine=candidate;}}catch(Throwable t){initError="engine:"+t.getClass().getSimpleName();}});}catch(RuntimeException e){initError=e.getClass().getSimpleName();}
+        jobs.allowCoreThreadTimeOut(true);
+        try{jobs.execute(()->{try{synchronized(ENGINE_LOCK){if(sharedEngine==null)sharedEngine=new VisualEngine(ctx.getApplicationContext());}if(!closed)engine=sharedEngine;}catch(Throwable t){initError="engine:"+t.getClass().getSimpleName();}});}catch(RuntimeException e){initError=e.getClass().getSimpleName();}
     }
     public static boolean googleSearch(String s){
         try{URI u=new URI(s);String h=u.getHost(),p=u.getPath();
@@ -59,7 +62,7 @@ public final class UCVisualBridge implements AutoCloseable {
     public void trustedNavigation(String url){
         if(closed)return;
         Runnable navigation=()->{
-            String next=googleSearch(url)?url:"";generation++;
+            String next=googleSearch(url)?url:"";generation++;paused=false;
             if(attached){try{host.removeInterface("xgridUCVision");}catch(Throwable ignored){}attached=false;}
             session="";activePage="";
             if(next.isEmpty())return;
@@ -84,19 +87,19 @@ public final class UCVisualBridge implements AutoCloseable {
         JSONObject j=new JSONObject();
         try{
             VisualEngine e=engine;
-            j.put("ready",e!=null&&attached&&!closed&&!activePage.isEmpty());
+            j.put("ready",e!=null&&e.poseReady&&e.openCvReady&&attached&&!closed&&!paused&&!activePage.isEmpty());
             j.put("pose",e!=null&&e.poseReady);j.put("openCv",e!=null&&e.openCvReady);
             j.put("nativeAttached",attached?1:0);
             j.put("inflight",jobs.getActiveCount());j.put("queued",jobs.getQueue().size());j.put("cacheHits",cacheHits.get());
             j.put("analyzed",success.get());j.put("failures",failure.get());j.put("rejected",rejected.get());
             j.put("cancelled",cancelled.get());j.put("timeouts",timeout.get());j.put("analysisMs",analysisMs);
-            j.put("error",initError);
+            j.put("error",initError+(e!=null?e.initError:""));
         }catch(Exception ignored){}
         return j.toString();
     }
     /** Requires both per-request token and independently injected session capability. */
     @JavascriptInterface public boolean analyzeVisual(String original,String preview,String token,String capability){
-        if(closed||!attached||engine==null||token==null||token.length()<2||token.length()>96||capability==null||!capability.equals(session)||activePage.isEmpty()){rejected.incrementAndGet();return false;}
+        if(closed||paused||!attached||engine==null||token==null||token.length()<2||token.length()>96||capability==null||!capability.equals(session)||activePage.isEmpty()){rejected.incrementAndGet();return false;}
         String gif=StrictHttpsMedia.permitted(original)?original:"";
         String still=StrictHttpsMedia.permitted(preview)?preview:"";
         if(gif.isEmpty()&&still.isEmpty()){rejected.incrementAndGet();return false;}
@@ -132,14 +135,17 @@ public final class UCVisualBridge implements AutoCloseable {
         catch(Throwable t){failure.incrementAndGet();try{payload.put("ok",false);payload.put("error",t.getClass().getSimpleName());}catch(Exception ignored){}}
         finally{analysisMs+=SystemClock.elapsedRealtime()-start;}
         final String message=payload.toString();
-        ui.post(()->{if(!closed&&attached&&epoch==generation&&page.equals(activePage)&&page.equals(host.activeTopLevelUrl())){
+        ui.post(()->{if(!closed&&!paused&&attached&&epoch==generation&&page.equals(activePage)&&page.equals(host.activeTopLevelUrl())){
             try{host.evaluateMainFrame("window.dispatchEvent(new CustomEvent('__xgridNativeAnalysis',{detail:"+message+"}));");}
             catch(Throwable t){initError="callback:"+t.getClass().getSimpleName();}
         }else cancelled.incrementAndGet();});
     }
+    public void pauseDocument(){paused=true;generation++;}
+    public void resumeDocument(){if(!closed){paused=false;trustedDocumentReady();}}
     @Override public void close(){
         closed=true;generation++;ui.post(()->{if(attached)try{host.removeInterface("xgridUCVision");}catch(Throwable ignored){}attached=false;});
         jobs.shutdownNow();synchronized(cache){cache.clear();}
-        VisualEngine v=engine;if(v!=null){synchronized(v){v.close();}}engine=null;
+        // One shared model belongs to the application process, not an individual tab.
+        engine=null;
     }
 }

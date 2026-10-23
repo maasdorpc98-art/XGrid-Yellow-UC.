@@ -80,6 +80,6 @@ public final class UCHost implements UCVisualBridge.TrustedPageHost, View.OnAtta
         view.removeOnAttachStateChangeListener(this);
         bridge.close();
     }
-    @Override public void onViewAttachedToWindow(View view) { }
-    @Override public void onViewDetachedFromWindow(View view) { release(view); }
+    @Override public void onViewAttachedToWindow(View view) { bridge.resumeDocument(); }
+    @Override public void onViewDetachedFromWindow(View view) { bridge.pauseDocument(); }
 }
