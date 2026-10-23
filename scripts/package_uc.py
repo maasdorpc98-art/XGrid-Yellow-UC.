@@ -82,7 +82,7 @@ def patch_hooks(base, directory, classpath):
     smali = directory / 'smali'
     if smali.exists():
         shutil.rmtree(smali)
-    subprocess.run(['java', '-cp', classpath, 'org.jf.baksmali.Main', 'disassemble', '--api', '28', '-o', str(smali), str(dex)], check=True)
+    subprocess.run(['java', '-cp', classpath, 'org.jf.baksmali.Main', 'disassemble', '--api', '26', '-o', str(smali), str(dex)], check=True)
     target = smali / 'org/xgrid/orange'
     for name in ('OrangeHook.smali', 'OrangeLongPress.smali'):
         shutil.copyfile(ROOT / 'uc-hooks' / name, target / name)
@@ -113,11 +113,11 @@ def patch_hooks(base, directory, classpath):
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.move(str(smali / relative), str(target))
     out = directory / 'classes7.dex'
-    subprocess.run(['java', '-cp', classpath, 'org.jf.smali.Main', 'assemble', '--api', '28', '-o', str(out), str(smali)], check=True)
+    subprocess.run(['java', '-cp', classpath, 'org.jf.smali.Main', 'assemble', '--api', '26', '-o', str(out), str(smali)], check=True)
     if not out.exists():
         raise ValueError('UC hook assembly failed')
     extra = directory / 'uc-hooks.dex'
-    subprocess.run(['java', '-cp', classpath, 'org.jf.smali.Main', 'assemble', '--api', '28', '-o', str(extra), str(hooks)], check=True)
+    subprocess.run(['java', '-cp', classpath, 'org.jf.smali.Main', 'assemble', '--api', '26', '-o', str(extra), str(hooks)], check=True)
     return out.read_bytes(), extra.read_bytes()
 
 def signable(name):
@@ -141,7 +141,7 @@ def isolate_unused_factory(data, collisions, classpath, report):
     source = directory/'engine.dex'
     source.write_bytes(data)
     smali = directory/'smali'
-    subprocess.run(['java','-cp',classpath,'org.jf.baksmali.Main','disassemble','--api','28','-o',str(smali),str(source)],check=True)
+    subprocess.run(['java','-cp',classpath,'org.jf.baksmali.Main','disassemble','--api','26','-o',str(smali),str(source)],check=True)
     factory = smali/'com/google/android/datatransport/cct/CctBackendFactory.smali'
     if not factory.is_file():
         raise ValueError('Expected unused factory definition missing')
@@ -153,7 +153,7 @@ def isolate_unused_factory(data, collisions, classpath, report):
                 raise ValueError('Cannot remove a referenced telemetry factory: ' + str(file))
     factory.unlink()
     dest = directory/'isolated.dex'
-    subprocess.run(['java','-cp',classpath,'org.jf.smali.Main','assemble','--api','28','-o',str(dest),str(smali)],check=True)
+    subprocess.run(['java','-cp',classpath,'org.jf.smali.Main','assemble','--api','26','-o',str(dest),str(smali)],check=True)
     report.setdefault('removedUnusedEngineClasses',[]).append(descriptor)
     return dest.read_bytes()
 

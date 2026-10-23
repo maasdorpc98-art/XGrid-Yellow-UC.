@@ -29,6 +29,7 @@ with ZipFile(args.base) as base, ZipFile(args.apk) as apk:
     for name in apk.namelist():
         if not re.fullmatch(r'classes\d*\.dex',name):continue
         data=apk.read(name);classes=defined_classes(data)
+        assert data[:8] in (b'dex\n035\x00',b'dex\n037\x00',b'dex\n038\x00'), 'DEX format exceeds Android 8 compatibility: '+name
         assert not seen & classes, 'Duplicate DEX definitions: '+repr(seen & classes)
         seen|=classes;dex_count+=1
         assert hashlib.sha1(data[32:]).digest()==data[12:32], 'DEX SHA-1: '+name
