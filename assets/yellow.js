@@ -1002,10 +1002,23 @@ function xsNativeCompare(a,b){
   const score=motion?.7*geom+.3*mot:geom;
   return {score:Number.isFinite(score)?Math.max(0,Math.min(1,score)):0,geometry:geom,motion:mot,motionValid:motion,poseUsed:pose!=null,subjectsUsed:confidence>=.5};
 }
-  function xsNativePrepareFindMore(cards,s,done){
-    const info=xsNativeStatus();xsNativeRankEnabled=false;xsNativeScores.clear();xsNativeApplied=0;
+  function xsNativePrepareFindMore(cards,s,done,engineWaitStart){
+    const info=xsNativeStatus();
+    xsNativeRankEnabled=false;xsNativeScores.clear();xsNativeApplied=0;
     xsNativeComparable=0;xsNativeAnchorReady=0;xsNativeCoverage=0;xsNativeSampleCount=0;
-    if(!xsNativeHost()||!info?.ready){xsNativeLastReady=false;xsNativeLastOutcome='bridge-unavailable';done();return}
+    if(!info?.ready){
+      const started=engineWaitStart==null?performance.now():engineWaitStart;
+      // Allow background native initialization to finish. Never silently claim
+      // native ranking ran when MediaPipe or OpenCV could not be initialized.
+      if(xsNativeHost()&&performance.now()-started<8500){
+        xsNativeLastReady=false;xsNativeLastOutcome='waiting-for-required-native';
+        setTimeout(()=>xsNativePrepareFindMore(cards,s,done,started),250);return;
+      }
+      xsNativeLastReady=false;xsNativeLastOutcome='required-native-unavailable';
+      xsNativeRecordError('required-native-unavailable');
+      xsToast('MediaPipe / OpenCV unavailable • see XSearch diagnostics');
+      done();return;
+    }
     xsNativeLastReady=true;xsNativeFindRuns++;
     const t0=performance.now(),feedback=xsFeedbackGroups(s);
     const anchors=[...feedback.pos,...feedback.neg].map(f=>xsNativeAnchorSource(f,cards)).filter(a=>xsNativeLikelyImage(a.url));
