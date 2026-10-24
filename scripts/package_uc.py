@@ -56,14 +56,14 @@ def manifest_patch(data):
                 name = names[struct.unpack_from('<I', b, p+4)[0]]
                 value = struct.unpack_from('<I', b, p+16)[0]
                 if name == 'versionCode':
-                    struct.pack_into('<I', b, p+16, 290402)
+                    struct.pack_into('<I', b, p+16, 290403)
                     found.add(name)
                 elif name == 'versionName':
                     old = names[value]
                     if not old.startswith('29.0.0'):
                         raise ValueError('Unexpected base version: ' + old)
                     pos, n, enc = entries[value]
-                    new = ('29.4.2' + old[6:]).encode(enc)
+                    new = ('29.4.3' + old[6:]).encode(enc)
                     if len(new) != n:
                         raise ValueError('Version string length changed')
                     b[pos:pos+n] = new
@@ -201,7 +201,7 @@ def package(base_path, engine_path, output, classpath):
     if hashlib.sha256(base_path.read_bytes()).hexdigest() != BASE_SHA:
         raise ValueError('UC foundation does not match the supplied original APK')
     output.parent.mkdir(parents=True, exist_ok=True)
-    report = {'baseSha256': BASE_SHA, 'package': 'org.xgrid.orange', 'versionCode': 290402,
+    report = {'baseSha256': BASE_SHA, 'package': 'org.xgrid.orange', 'versionCode': 290403,
               'ucStartupApplicationPreserved': True, 'nativeModel': 'MediaPipe pose full + OpenCV',
               'deviceStartupTested': False, 'originalDexPreserved': [], 'originalLibrariesPreserved': [],
               'addedDex': [], 'addedLibraries': []}
