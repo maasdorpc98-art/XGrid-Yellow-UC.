@@ -1,5 +1,5 @@
 (function(){function install(){
-/* XGrid Yellow UC v29.4.0 : UC browser foundation + Yellow v28.3.8 XSearch and GIF FastPath.
+/* XGrid Yellow UC v29.4.3 : UC browser foundation + Yellow v28.3.8 XSearch and GIF FastPath.
    UC host adapter connects the real MediaPipe / OpenCV worker.
    Native visual scoring is disabled unless a real xgridUCVision/yellowVision bridge is installed. */
 ;(function XGridUcDocumentAdapter(){
@@ -1084,7 +1084,7 @@ function xsNativeCompare(a,b){
       if(performance.now()-t0>=deadline){xsNativeTimeouts++;finish('deadline')}
     },170);
   }
-  function xsNativeDebug(){return {bridge:!!xsNativeHost(),status:xsNativeStatus(),ready:xsNativeLastReady,
+  function xsNativeDebug(){return {bridge:!!xsNativeHost(),hostProbe:window.__xgridNativeProbe||null,status:xsNativeStatus(),ready:xsNativeLastReady,
     findRuns:xsNativeFindRuns,requested:xsNativeRequested,success:xsNativeSuccess,errors:xsNativeErrors,skipped:xsNativeSkipped,
     timeouts:xsNativeTimeouts,completed:xsNativeCompleted,signatures:xsNativeSignatures.size,matchedScores:xsNativeScores.size,
     anchorsReady:xsNativeAnchorReady,comparable:xsNativeComparable,applied:xsNativeApplied,rankEnabled:xsNativeRankEnabled,
@@ -1421,6 +1421,7 @@ function xsNativeCompare(a,b){
         `Ranking top10 positive anchors / blocked-site leakage: ${xsearchDebug.positiveTop10||0}/${xsearchDebug.blockedLeakage||0}`,
         '--- XSearch visual ---',
         `Native engine / Pose / OpenCV / attached: ${xsearchDebug.nativeVision?.bridge===true} / ${xsearchDebug.nativeVision?.status?.pose===true} / ${xsearchDebug.nativeVision?.status?.openCv===true} / ${xsearchDebug.nativeVision?.status?.nativeAttached||0}`,
+`UC native interface visibility probe: ${JSON.stringify(xsearchDebug.nativeVision?.hostProbe||null)}`,
         `Native analysis requested/success/errors/signatures: ${xsearchDebug.nativeVision?.requested||0}/${xsearchDebug.nativeVision?.success||0}/${xsearchDebug.nativeVision?.errors||0}/${xsearchDebug.nativeVision?.signatures||0}`,
         `Native FIND MORE outcome/scored/waitMs: ${xsearchDebug.nativeVision?.outcome||'none'}/${xsearchDebug.nativeVision?.matchedScores||0}/${xsearchDebug.nativeVision?.waitMs||0}`,
         `Native actual rank applied / anchors ready / fallback: ${xsearchDebug.nativeVision?.applied||0}/${xsearchDebug.nativeVision?.anchorsReady||0}/${xsearchDebug.nativeVision?.rankEnabled===true?'NO':'YES'}`,
