@@ -22,12 +22,16 @@ Signing happens with Android SDK `apksigner`, using the original Orange certific
 
 ## Installation identity
 
-The final application is **XGrid Yellow**, version **29.4.2**, ARM64, Android 8.0+. Its internal package remains `org.xgrid.orange` so UC's compiled identity references remain intact. A correctly signed build can update the original Orange installation with certificate SHA-256 `b0e8b0cf257ba5ad833e54096c6d4beaf56ef17637af10f6d57227c76f5bfed4`. Experimental builds signed with other keys are not compatible with that update identity.
+The final application is **XGrid Yellow**, version **29.4.3**, ARM64, Android 8.0+. Its internal package remains `org.xgrid.orange` so UC's compiled identity references remain intact. A correctly signed build can update the original Orange installation with certificate SHA-256 `b0e8b0cf257ba5ad833e54096c6d4beaf56ef17637af10f6d57227c76f5bfed4`. Experimental builds signed with other keys are not compatible with that update identity.
 
 ## Verification limits
 
 CI compilation, controller behavior checks, package preservation checks, DEX integrity, native model inclusion, Android signing, and alignment can be verified here. Installation, UC startup, actual GIF throughput, and MediaPipe/OpenCV inference still require an ARM64 Android device. Do not describe this as device-tested until those checks are recorded.
 
-## Permanent native engines — v29.4.2
+## Permanent native engines — v29.4.3
 
 MediaPipe Pose Landmarker and OpenCV Farneback flow are mandatory for native FIND MORE ranking. The pose model and native binaries are packaged directly into UC (offline, not downloaded on demand). Native initialization runs off the UC startup thread. The runtime performs a real pose-detect call and optical-flow call before reporting ready. Failed initialization is retried with a bounded delay; the controller waits up to 8.5 seconds for initialization and reports a visible failure rather than silently accepting geometry-only or fabricated motion as native processing. A still image can correctly have no motion despite both engines being healthy. This is a source/CI contract, not a guarantee against incompatible devices or actual on-device test failures.
+
+## UC native bridge recovery — 29.4.3
+
+The native interface stays attached between **trusted Google search** navigations instead of being detached/re-added during page startup. Authentication capabilities are rotated and stale callbacks rejected on each navigation. A delayed JavaScript visibility probe runs only on Google Images, triggering **at most one reload per distinct search** if UC did not expose the newly attached native object in the first document. Further failures are explicitly logged under `XGridYellowUC` and the page exposes `window.__xgridNativeProbe` for XSearch diagnostics. The native engine remains mandatory for native FIND MORE ranking. This addresses a source-verified timing risk; actual MediaPipe/OpenCV operation still requires an Android device diagnostic.
