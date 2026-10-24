@@ -121,6 +121,8 @@ jobs:
           "$tools/apksigner" verify --min-sdk-version 26 --verbose --print-certs \
             dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk
           "$tools/zipalign" -c -P 16 4 dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk
+          "$tools/aapt" dump badging dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk |
+            grep -q "package: name='org.xgrid.orange' versionCode='290402'"
           python3 - <<'PY'
           import zipfile,hashlib
           apk='dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk'
@@ -129,7 +131,7 @@ jobs:
               assert f.read('assets/pose_landmarker_full.task')[:8], 'Pose model missing'
               for name in ('libmediapipe_tasks_vision_jni.so','libopencv_java4.so','libc++_shared.so'):
                   b=f.read('lib/arm64-v8a/'+name)
-                  assert b[:5]==b'\\x7fELF\\x02', name
+                  assert b[:5]==bytes.fromhex('7f454c4602'), name
           print('PASS: ZIP CRC + bundled MediaPipe model + both ARM64 engines')
           print('APK SHA256:',hashlib.sha256(open(apk,'rb').read()).hexdigest())
           PY
