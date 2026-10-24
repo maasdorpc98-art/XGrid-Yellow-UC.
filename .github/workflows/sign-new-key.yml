@@ -119,6 +119,13 @@ jobs:
         run: |
           set -euo pipefail
           tools="$ANDROID_HOME/build-tools/35.0.0"
+          metadata="$("$tools/aapt" dump badging dist/Yellow-UC-unsigned.apk | grep '^package:')"
+          [[ "$metadata" == *"name='org.xgrid.orange'"* ]] || { echo "::error::Unexpected package ID"; exit 1; }
+          version_code="$(printf '%s\n' "$metadata" | sed -n "s/.*versionCode='\([0-9]\+\)'.*/\1/p")"
+          [[ "$version_code" =~ ^[0-9]+$ ]] && (( version_code >= 290402 )) ||
+            { echo "::error::Version code must be >= 290402 for this signing line"; exit 1; }
+          signed_apk="dist/XGrid_Yellow_UC_v${version_code}_NewPermanentKey.apk"
+          export signed_apk
           "$tools/apksigner" sign \
             --ks signing/yellow-uc-permanent.p12 \
             --ks-type PKCS12 \
@@ -126,16 +133,16 @@ jobs:
             --ks-pass env:XGRID_NEW_SIGNER_PASSWORD \
             --key-pass env:XGRID_NEW_SIGNER_PASSWORD \
             --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
-            --out dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk \
+            --out "$signed_apk" \
             dist/Yellow-UC-unsigned.apk
           "$tools/apksigner" verify --min-sdk-version 26 --verbose --print-certs \
-            dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk
-          "$tools/zipalign" -c -P 16 4 dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk
-          "$tools/aapt" dump badging dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk |
-            grep -q "package: name='org.xgrid.orange' versionCode='290402'"
+            "$signed_apk"
+          "$tools/zipalign" -c -P 16 4 "$signed_apk"
+          "$tools/aapt" dump badging "$signed_apk" |
+            grep -q "package: name='org.xgrid.orange' versionCode='$version_code'"
           python3 - <<'PY'
-          import zipfile,hashlib
-          apk='dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk'
+          import zipfile,hashlib,os
+          apk=os.environ['signed_apk']
           with zipfile.ZipFile(apk) as f:
               assert f.testzip() is None, 'ZIP CRC failed'
               assert f.read('assets/pose_landmarker_full.task')[:8], 'Pose model missing'
@@ -143,11 +150,11 @@ jobs:
                   b=f.read('lib/arm64-v8a/'+name)
                   assert b[:5]==bytes.fromhex('7f454c4602'), name
           print('PASS: ZIP CRC + bundled MediaPipe model + both ARM64 engines')
-          print('APK SHA256:',hashlib.sha256(open(apk,'rb').read()).hexdigest())
+          print('APK SHA256:',hashlib.file_digest(open(apk,'rb'),'sha256').hexdigest())
           PY
       - uses: actions/upload-artifact@v4
         with:
-          name: XGrid-Yellow-UC-v29.4.2-SIGNED-NewPermanentKey
-          path: dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk
+          name: XGrid-Yellow-UC-SIGNED-NewPermanentKey
+          path: dist/*_NewPermanentKey.apk
           if-no-files-found: error
           retention-days: 30
