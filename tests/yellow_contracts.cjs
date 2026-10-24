@@ -52,6 +52,28 @@ assert(!source.includes('window.mbrowser')&&!source.includes('window._XJSAPI_'))
 for(const label of ['GIF ONLY','FIND MORE','FIND VARIATIONS','RE-SEARCH','__xgridUcOpenImageMenu'])assert(source.includes(label));
 console.log('PASS: controller syntax, v3 native signatures, geometry-only ranking, 70/30 ranking, capability argument, request deduplication, stale callback rejection, accepted native callback, non-starving GIF scheduler, UC-only controller controls.');
 
+
+const sampling = vm.runInNewContext(
+  section('  function xsNativeSampleQueue(', '  function xsNativePrepareFindMore(')+'\nxsNativeSampleQueue',
+  {xsNativeSignatures:new Map(),xsNativeLikelyImage:url=>typeof url==='string'&&url.startsWith('https://')}
+);
+const candidates=Array.from({length:120},(_,i)=>({
+  url:'https://example.com/gif/'+i+'.gif',preview:'https://example.com/still/'+i+'.jpg'
+}));
+const anchorGif={url:'https://example.com/anchor.gif',preview:'https://example.com/anchor.jpg'};
+const sampled=sampling(candidates,[anchorGif],40);
+assert.equal(sampled.length,40,'Bounded native request budget');
+assert.equal(sampled[0].url,anchorGif.url,'Selected image anchor is analyzed first');
+assert.equal(new Set(sampled.map(x=>x.url)).size,40,'No duplicate native requests');
+assert(sampled.some(x=>x.url.endsWith('/0.gif')),'Keep high-ranked grid results');
+assert(sampled.some(x=>Number(x.url.match(/\/(\d+)\.gif$/)?.[1])>=110),
+  'Sample deep grid results instead of only the first 40');
+const cached=new Map([[candidates[0].url,{}]]);
+const small=sampling(candidates.slice(0,3),[],12,cached);
+assert.equal(small.length,2,'Cached results must not consume the request budget');
+assert(small.every(x=>x.url!==candidates[0].url));
+console.log('PASS: native visual analysis samples the full grid, prioritizes anchors, deduplicates, and respects cached signatures.');
+
 const base = require('path').join(__dirname,'../native/src/main/java');
 const engine = fs.readFileSync(require('path').join(base,'com/xgrid/yellownative/VisualEngine.java'),'utf8');
 const bridge = fs.readFileSync(require('path').join(base,'com/xgrid/yellowuc/UCVisualBridge.java'),'utf8');

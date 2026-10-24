@@ -10,8 +10,8 @@
    if(window.__xgridUcFastPathInstalled)return;
    Object.defineProperty(window,'__xgridUcFastPathInstalled',{value:true,configurable:false,enumerable:false,writable:false});
  }catch(_){return}
- window.__xgridUcPlatform='XGrid Yellow UC v29.4.0';
- window.__xgridUcMigration={version:'29.4.0',origin:'Yellow v28.3.8',browser:'UC',nativeVision:'uc-host-connected-device-test-pending',gifOnly:true};
+ window.__xgridUcPlatform='XGrid Yellow UC v29.4.3';
+ window.__xgridUcMigration={version:'29.4.3',origin:'Yellow v28.3.8',browser:'UC',nativeVision:'uc-host-connected-device-test-pending',gifOnly:true};
 ;(() => {
   'use strict';
 
@@ -1002,6 +1002,26 @@ function xsNativeCompare(a,b){
   const score=motion?.7*geom+.3*mot:geom;
   return {score:Number.isFinite(score)?Math.max(0,Math.min(1,score)):0,geometry:geom,motion:mot,motionValid:motion,poseUsed:pose!=null,subjectsUsed:confidence>=.5};
 }
+  // Sample the entire candidate grid, not just its first rows. Keep anchors
+  // and visible top results first, then spread a bounded budget across the corpus.
+  function xsNativeSampleQueue(samples,anchors,maxRequests,known=xsNativeSignatures){
+    const queue=[],seen=new Set();
+    const enqueue=(url,preview)=>{
+      if(queue.length>=maxRequests||seen.has(url)||known.has(url)||!xsNativeLikelyImage(url))return;
+      seen.add(url);queue.push({url,preview});
+    };
+    for(const anchor of anchors)enqueue(anchor.url,anchor.preview);
+    const topBudget=Math.min(12,Math.max(0,Math.floor((maxRequests-queue.length)/3)));
+    for(const sample of samples.slice(0,topBudget))enqueue(sample.url,sample.preview);
+    const spreadBudget=Math.max(0,maxRequests-queue.length);
+    for(let i=0;i<spreadBudget&&samples.length;i++){
+      const at=Math.min(samples.length-1,Math.floor((i+.5)*samples.length/spreadBudget));
+      const sample=samples[at];enqueue(sample.url,sample.preview);
+    }
+    // Fill any gaps left by duplicate URLs or already-cached signatures.
+    for(const sample of samples)enqueue(sample.url,sample.preview);
+    return queue;
+  }
   function xsNativePrepareFindMore(cards,s,done,engineWaitStart){
     const info=xsNativeStatus();
     xsNativeRankEnabled=false;xsNativeScores.clear();xsNativeApplied=0;
@@ -1030,18 +1050,8 @@ function xsNativeCompare(a,b){
     }
     xsNativeSampleCount=samples.length;
     if(!positives.length||!samples.length){xsNativeLastOutcome=!positives.length?'anchor-source-missing':'candidate-source-missing';done();return}
-    const queue=[],seen=new Set();
-    const enqueue=(url,preview)=>{if(!seen.has(url)&&!xsNativeSignatures.has(url)&&xsNativeLikelyImage(url)){
-      seen.add(url);queue.push({url,preview});
-    }};
-    for(const a of anchors)enqueue(a.url,a.preview);
-    // Expose broad pool coverage rather than privileging only current top-ranked cards.
-    for(const sample of samples.slice(0,12))enqueue(sample.url,sample.preview);
-    for(let i=0;i<samples.length;i++){
-      const sample=samples[Math.min(samples.length-1,Math.floor((i+.5)*samples.length/Math.max(1,samples.length)))];
-      enqueue(sample.url,sample.preview);
-    }
     const maxRequests=Math.min(40,Math.max(12,samples.length)),maxInflight=2,deadline=13500;
+    const queue=xsNativeSampleQueue(samples,anchors,maxRequests);
     let cursor=0,requests=0,ended=false;
     const finish=why=>{
       if(ended)return;ended=true;clearInterval(tick);
