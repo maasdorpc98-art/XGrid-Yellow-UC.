@@ -1,0 +1,141 @@
+name: XGrid Yellow UC - New permanent signing key
+
+on:
+  workflow_dispatch:
+    inputs:
+      build_run_id:
+        description: 'Successful Yellow UC build run ID containing the unsigned APK'
+        required: true
+        default: '39994923941'
+        type: string
+  workflow_run:
+    workflows: ['Yellow UC build']
+    types: [completed]
+
+# Only sign our own successful main-branch builds.
+permissions:
+  contents: write
+  actions: read
+
+concurrency:
+  group: xgrid-yellow-new-signer
+  cancel-in-progress: false
+
+jobs:
+  sign:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          persist-credentials: true
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android signing and alignment tools
+        run: |
+          "${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"
+      - name: Enforce encrypted permanent signing key
+        env:
+          XGRID_NEW_SIGNER_PASSWORD: ${{ secrets.XGRID_NEW_SIGNER_PASSWORD }}
+          BOOTSTRAP: ${{ github.event_name == 'workflow_dispatch' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if (( ${#XGRID_NEW_SIGNER_PASSWORD} < 24 )); then
+            echo "::error::Set repository Actions secret XGRID_NEW_SIGNER_PASSWORD to a unique random password of 24+ characters."
+            exit 1
+          fi
+          mkdir -p signing
+          if [[ ! -f signing/yellow-uc-permanent.p12 ]]; then
+            if [[ "$BOOTSTRAP" != "true" ]]; then
+              echo "::error::First run must be manual (Actions > XGrid Yellow UC - New permanent signing key > Run workflow)."
+              exit 1
+            fi
+            umask 077
+            keytool -genkeypair \
+              -alias yellow-uc \
+              -keyalg RSA -keysize 3072 -sigalg SHA256withRSA \
+              -validity 10950 \
+              -dname 'CN=XGrid Yellow UC, OU=Android, O=XGrid, C=ZA' \
+              -keystore signing/yellow-uc-permanent.p12 \
+              -storetype PKCS12 \
+              -storepass "$XGRID_NEW_SIGNER_PASSWORD" \
+              -keypass "$XGRID_NEW_SIGNER_PASSWORD" \
+              -noprompt
+            # The .p12 is encrypted using the private Actions secret.
+            # No plaintext keystore password is stored in the repository or artifacts.
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add signing/yellow-uc-permanent.p12
+            git commit -m 'Store encrypted permanent Yellow UC signing key'
+            git push origin HEAD:main
+          fi
+          keytool -list -v -storetype PKCS12 \
+            -keystore signing/yellow-uc-permanent.p12 \
+            -storepass "$XGRID_NEW_SIGNER_PASSWORD" \
+            -alias yellow-uc | grep -E 'Alias name:|SHA256:'
+      - name: Download verified unsigned UC build
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BUILD_RUN_INPUT: ${{ inputs.build_run_id }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          run_id="${WORKFLOW_RUN_ID:-${BUILD_RUN_INPUT:-39994923941}}"
+          details="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '[.status,.conclusion,.head_branch,.head_repository.full_name] | join("|")')"
+          if [[ "$details" != "completed|success|main|$GITHUB_REPOSITORY" ]]; then
+            echo "::error::Unsigned source run must be a successful build from this repository's main branch: $details"
+            exit 1
+          fi
+          mkdir -p downloaded dist
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name Yellow-UC-unsigned-and-audit --dir downloaded
+          unsigned="$(find downloaded -type f -name Yellow-UC-unsigned.apk -print -quit)"
+          test -n "$unsigned"
+          cp "$unsigned" dist/Yellow-UC-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 dist/Yellow-UC-unsigned.apk
+      - name: Sign with permanent new certificate and verify
+        env:
+          XGRID_NEW_SIGNER_PASSWORD: ${{ secrets.XGRID_NEW_SIGNER_PASSWORD }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          tools="$ANDROID_HOME/build-tools/35.0.0"
+          "$tools/apksigner" sign \
+            --ks signing/yellow-uc-permanent.p12 \
+            --ks-type PKCS12 \
+            --ks-key-alias yellow-uc \
+            --ks-pass env:XGRID_NEW_SIGNER_PASSWORD \
+            --key-pass env:XGRID_NEW_SIGNER_PASSWORD \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
+            --out dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk \
+            dist/Yellow-UC-unsigned.apk
+          "$tools/apksigner" verify --min-sdk-version 26 --verbose --print-certs \
+            dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk
+          "$tools/zipalign" -c -P 16 4 dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk
+          python3 - <<'PY'
+          import zipfile,hashlib
+          apk='dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk'
+          with zipfile.ZipFile(apk) as f:
+              assert f.testzip() is None, 'ZIP CRC failed'
+              assert f.read('assets/pose_landmarker_full.task')[:8], 'Pose model missing'
+              for name in ('libmediapipe_tasks_vision_jni.so','libopencv_java4.so','libc++_shared.so'):
+                  b=f.read('lib/arm64-v8a/'+name)
+                  assert b[:5]==b'\\x7fELF\\x02', name
+          print('PASS: ZIP CRC + bundled MediaPipe model + both ARM64 engines')
+          print('APK SHA256:',hashlib.sha256(open(apk,'rb').read()).hexdigest())
+          PY
+      - uses: actions/upload-artifact@v4
+        with:
+          name: XGrid-Yellow-UC-v29.4.2-SIGNED-NewPermanentKey
+          path: dist/XGrid_Yellow_UC_v29.4.2_NewPermanentKey.apk
+          if-no-files-found: error
+          retention-days: 30
