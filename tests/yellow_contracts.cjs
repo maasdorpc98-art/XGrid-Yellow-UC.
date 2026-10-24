@@ -72,3 +72,18 @@ assert(source.includes("xsNativeLastOutcome='required-native-unavailable'"));
 assert(source.includes("xsToast('MediaPipe / OpenCV unavailable"),
   'Native unavailability must be visible to the user');
 console.log('PASS: mandatory MediaPipe/OpenCV initialization, native JNI smoke tests, retry and explicit UI failure.');
+
+const host=fs.readFileSync(require('path').join(base,'com/xgrid/yellowuc/UCHost.java'),'utf8');
+assert(bridge.includes('if(!attached){') && bridge.includes('host.attachInterface(this,"xgridUCVision")'),
+  'Do not detach/re-attach native JS object for each trusted search');
+assert(bridge.includes('session=""') && bridge.includes('generation++'),
+  'Keep session rotation and stale-analysis rejection');
+assert(host.includes('verifyBridgeVisibility(pageUrl)'),
+  'Google document callback must invoke native JS visibility probe');
+assert(host.includes('reloadAttempts.containsKey(key)') &&
+       host.includes('if(!imagesSearch(expectedUrl)') &&
+       host.includes('reload.invoke(current())'),
+  'Use at most one recovery reload, only on trusted Google Images searches');
+assert(source.includes('UC native interface visibility probe:'),
+  'Report bridge visibility to XSearch diagnostics');
+console.log('PASS: trusted UC bridge persistence, secure session rotation, bounded recovery reload, diagnostics.');
