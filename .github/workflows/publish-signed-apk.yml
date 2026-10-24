@@ -1,40 +1,53 @@
-name: Publish signed XGrid Yellow UC v29.4.2 APK
+name: Publish verified XGrid Yellow UC signed APK
 on:
-  push:
-    branches: [main]
-    paths:
-      - .github/workflows/publish-signed-apk.yml
+  workflow_run:
+    workflows: ['XGrid Yellow UC - New permanent signing key']
+    types: [completed]
   workflow_dispatch:
+    inputs:
+      signing_run_id:
+        description: 'Successful signing workflow run ID'
+        required: true
+        default: '40088027778'
+        type: string
 permissions:
   contents: write
   actions: read
+concurrency:
+  group: xgrid-yellow-signed-release
+  cancel-in-progress: false
 jobs:
   publish:
-    if: github.ref == 'refs/heads/main'
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' &&
+       github.event.workflow_run.head_branch == 'main' &&
+       github.event.workflow_run.head_repository.full_name == github.repository)
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - name: Ensure Android verification tools
         run: '"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "build-tools;35.0.0"'
-      - name: Download already signed successful build #8
+      - name: Download successful signed Android artifact
         env:
           GH_TOKEN: ${{ github.token }}
+          WORKFLOW_RUN_ID: ${{ github.event.workflow_run.id }}
+          SIGNING_RUN_INPUT: ${{ inputs.signing_run_id }}
         shell: bash
         run: |
           set -euo pipefail
-          source_run=40088027778
-          details="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$source_run" --jq '[.status,.conclusion,.head_branch,.head_repository.full_name] | join("|")')"
-          if [[ "$details" != "completed|success|main|$GITHUB_REPOSITORY" ]]; then
-            echo "::error::Source signing workflow must have succeeded on this repository main."
+          run_id="${WORKFLOW_RUN_ID:-${SIGNING_RUN_INPUT:-40088027778}}"
+          details="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id" --jq '[.status,.conclusion,.head_branch,.head_repository.full_name,.name] | join("|")')"
+          if [[ "$details" != "completed|success|main|$GITHUB_REPOSITORY|XGrid Yellow UC - New permanent signing key" ]]; then
+            echo "::error::Source run must be a successful signing workflow on this repository main: $details"
             exit 1
           fi
           mkdir -p dist
-          gh run download "$source_run" --repo "$GITHUB_REPOSITORY" --name XGrid-Yellow-UC-SIGNED-NewPermanentKey --dir dist
-          find dist -maxdepth 2 -name '*.apk' -type f -print
-          count="$(find dist -name '*.apk' -type f | wc -l)"
+          gh run download "$run_id" --repo "$GITHUB_REPOSITORY" --name XGrid-Yellow-UC-SIGNED-NewPermanentKey --dir dist
+          count="$(find dist -maxdepth 2 -name '*.apk' -type f | wc -l)"
           test "$count" -eq 1
-      - name: Validate and publish direct APK
+      - name: Verify signed APK and publish direct update
         env:
           GH_TOKEN: ${{ github.token }}
         shell: bash
@@ -43,40 +56,49 @@ jobs:
           tools="$ANDROID_HOME/build-tools/35.0.0"
           source_apk="$(find dist -name '*.apk' -type f -print -quit)"
           test -n "$source_apk"
-          apk="dist/XGrid_Yellow_UC_v29.4.2_Signed.apk"
-          if [[ "$source_apk" != "$apk" ]]; then mv "$source_apk" "$apk"; fi
-          "$tools/apksigner" verify --min-sdk-version 26 --verbose --print-certs "$apk"
-          "$tools/zipalign" -c -P 16 4 "$apk"
-          metadata="$("$tools/aapt" dump badging "$apk" | grep '^package:')"
-          [[ "$metadata" == *"name='org.xgrid.orange'"* ]] || { echo "::error::Package mismatch"; exit 1; }
-          [[ "$metadata" == *"versionCode='290402'"* ]] || { echo "::error::Version mismatch"; exit 1; }
+          signature_report="$("$tools/apksigner" verify --min-sdk-version 26 --verbose --print-certs "$source_apk")"
+          printf '%s\n' "$signature_report"
+          echo "$signature_report" | grep -qi 'Signer #1 certificate SHA-256 digest: b25945a2af0bcb8e9d1209dedbf7bb533a477ae05b27d8604df8b57fc4c9d092' ||
+            { echo "::error::Wrong certificate! Rejecting update-incompatible APK"; exit 1; }
+          "$tools/zipalign" -c -P 16 4 "$source_apk"
+          metadata="$("$tools/aapt" dump badging "$source_apk" | grep '^package:')"
+          [[ "$metadata" == *"name='org.xgrid.orange'"* ]] || { echo "::error::Package identity changed"; exit 1; }
+          version_code="$(printf '%s\n' "$metadata" | sed -n "s/.*versionCode='\([0-9]\+\)'.*/\1/p")"
+          [[ "$version_code" =~ ^[0-9]+$ ]] && (( version_code >= 290403 )) ||
+            { echo "::error::Only publish v29.4.3 and later here"; exit 1; }
+          minor=$(( (version_code / 100) % 100 ))
+          patch=$(( version_code % 100 ))
+          version="29.$minor.$patch"
+          tag="v$version"
+          apk="dist/XGrid_Yellow_UC_v${version}_Signed.apk"
+          mv "$source_apk" "$apk"
           python3 - "$apk" <<'PY'
           import sys,zipfile
           with zipfile.ZipFile(sys.argv[1]) as z:
-              assert z.testzip() is None, "Bad APK ZIP CRC"
-              assert z.read("assets/pose_landmarker_full.task")[:8], "MediaPipe pose model missing"
+              assert z.testzip() is None, "Corrupt APK ZIP"
+              assert z.read("assets/pose_landmarker_full.task")[:8], "Pose model missing"
               for lib in ("libmediapipe_tasks_vision_jni.so","libopencv_java4.so","libc++_shared.so"):
                   assert z.read("lib/arm64-v8a/"+lib)[:5] == bytes.fromhex("7f454c4602"), lib
-          print("PASS: signed UC APK, pose model and ARM64 native engines")
+          print("PASS: UC APK includes mandatory ARM64 MediaPipe and OpenCV")
           PY
           sha256sum "$apk" | tee dist/APK-SHA256.txt
-          cat > dist/release-notes.md <<'NOTES'
-          Directly installable ARM64 Android APK for XGrid Yellow UC v29.4.2.
-          Package org.xgrid.orange, version code 290402.
-          Bundles mandatory MediaPipe Pose Landmarker and OpenCV native motion analysis.
-          Android APK signing verified by apksigner and ZIP alignment validated.
+          cat > dist/release-notes.md <<NOTES
+          Signed XGrid Yellow UC $version update APK, Android ARM64 (Android 8+).
           
-          NOTE: Signed with the new permanent key. Android cannot install it as an update
-          over existing installations signed with the old Orange certificate.
-          Back up app data before uninstalling the old signed application.
-          Future APKs signed with this same permanent key can update this release.
-          Runtime operation on a physical phone has not yet been established.
+          Package: org.xgrid.orange, versionCode $version_code.
+          Signer: the SAME permanent signing certificate as v29.4.2.
+          MediaPipe model and native OpenCV/MediaPipe libraries included.
+          v29.4.3 repairs the UC JavaScript interface lifecycle, adds a bounded
+          first-document recovery probe, and improves diagnostics.
+          
+          Update directly over v29.4.2, no uninstall, no data clearing.
+          Physical device validation of the repaired native bridge is still required.
           NOTES
-          if gh release view v29.4.2 --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            gh release upload v29.4.2 "$apk" --repo "$GITHUB_REPOSITORY" --clobber
-          else
-            gh release create v29.4.2 "$apk" --repo "$GITHUB_REPOSITORY" \
-              --target "$GITHUB_SHA" --title "XGrid Yellow UC v29.4.2 (signed APK)" \
-              --notes-file dist/release-notes.md
+          if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $tag already exists; refusing to overwrite an existing release"
+            exit 1
           fi
-          echo "Direct APK: https://github.com/$GITHUB_REPOSITORY/releases/download/v29.4.2/XGrid_Yellow_UC_v29.4.2_Signed.apk" >> "$GITHUB_STEP_SUMMARY"
+          gh release create "$tag" "$apk" --repo "$GITHUB_REPOSITORY" \
+             --target "$GITHUB_SHA" --title "XGrid Yellow UC $version (signed update)" \
+             --notes-file dist/release-notes.md
+          echo "Direct APK: https://github.com/$GITHUB_REPOSITORY/releases/download/$tag/XGrid_Yellow_UC_v${version}_Signed.apk" >> "$GITHUB_STEP_SUMMARY"
