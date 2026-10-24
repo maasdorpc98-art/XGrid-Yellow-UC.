@@ -112,15 +112,36 @@ public final class UCVisualBridge implements AutoCloseable {
     public void trustedNavigation(String url){
         if(closed)return;
         Runnable navigation=()->{
-            String next=googleSearch(url)?url:"";generation++;paused=false;
-            if(attached){try{host.removeInterface("xgridUCVision");}catch(Throwable ignored){}attached=false;}
-            session="";activePage="";
-            if(next.isEmpty())return;
+            String next=googleSearch(url)?url:"";
+            generation++;
+            paused=false;
+            session="";
+            activePage="";
+            if(next.isEmpty()){
+                if(attached){
+                    try{host.removeInterface("xgridUCVision");}catch(Throwable ignored){}
+                    attached=false;
+                }
+                return;
+            }
+            // Android/UC exposes JavaScript interfaces to new documents. Removing
+            // and re-attaching on every search navigation causes a permanent race
+            // with the next document and can leave window.xgridUCVision absent.
+            // Keep the same bridge attached while navigating between trusted
+            // Google search pages; rotate the unguessable session each time.
+            if(!attached){
+                try{host.attachInterface(this,"xgridUCVision");attached=true;}
+                catch(Throwable t){
+                    initError="attach:"+t.getClass().getSimpleName();
+                    android.util.Log.w("XGridYellowUC","Native interface attachment failed",t);
+                    return;
+                }
+            }
             byte[] random=new byte[24];rng.nextBytes(random);
-            StringBuilder hex=new StringBuilder();for(byte v:random)hex.append(String.format(java.util.Locale.ROOT,"%02x",v&255));
-            session=hex.toString();activePage=next;
-            try{host.attachInterface(this,"xgridUCVision");attached=true;}
-            catch(Throwable t){initError="attach:"+t.getClass().getSimpleName();session="";activePage="";}
+            StringBuilder hex=new StringBuilder();
+            for(byte v:random)hex.append(String.format(java.util.Locale.ROOT,"%02x",v&255));
+            session=hex.toString();
+            activePage=next;
         };
         if(Looper.myLooper()==Looper.getMainLooper())navigation.run();else ui.post(navigation);
     }
