@@ -1,12 +1,12 @@
+# Security and generated build output
 .gradle/
-local.properties
 **/build/
-build/
-dist/
-*.pem
+local.properties
 *.jks
 *.keystore
-*.p12
-*.pk8
-*.der
-__pycache__/
+*.apk
+*.aab
+signing/keystore.properties
+signing/release.jks
+.env
+.env.*
